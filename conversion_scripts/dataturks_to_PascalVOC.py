@@ -81,13 +81,14 @@ def get_xml_for_bbx(bbx_label, bbx_data, width, height):
     return xml
 
 
-def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out_dir, dataset_split):
+def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out_dir):
 
     """Convert a dataturks labeled item to pascalVOCXML string.
       Args:
         dataturks_labeled_item: JSON of one labeled image from dataturks.
         image_dir: Path to  directory to downloaded images (or a directory already having the images downloaded).
         xml_out_dir: Path to the dir where the xml needs to be written.
+        txt_out_dir: Path to the dir where the txt files needs to be written
       Returns:
         None.
       Raises:
@@ -103,23 +104,22 @@ def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out
         height = data['annotation'][0]['imageHeight']
         image_url = data['content']
 
-        file_path = maybe_download(image_url, image_dir)
+        image_file_path = maybe_download(image_url, image_dir)
 
-        with Image.open(file_path) as img:
+        with Image.open(image_file_path) as img:
             width, height = img.size
 
-        file_name = file_path.split(os.path.sep)[-1]
+        image_file_name = image_file_path.split(os.path.sep)[-1]
 
-        dataset_txt_file_name = file_name.split(".")[0]
-        dataset_txt_file__path = os.path.join(txt_out_dir, dataset_split + ".txt")
-        with open(dataset_txt_file__path, 'a+') as f:
-            f.write(str(dataset_txt_file_name) + '\n')
+        image_file_name_without_ext = image_file_name.split(".")[0]
+        with open(dataset_split_txt_file__path, 'a+') as f:
+            f.write(str(image_file_name_without_ext) + '\n')
 
         image_dir_folder_name = image_dir.split("/")[-1]
 
         xml = "<annotation>\n<folder>" + image_dir_folder_name + "</folder>\n"
-        xml = xml + "<filename>" + file_name + "</filename>\n"
-        xml = xml + "<path>" + file_path + "</path>\n"
+        xml = xml + "<filename>" + image_file_name + "</filename>\n"
+        xml = xml + "<path>" + image_file_path + "</path>\n"
         xml = xml + "<source>\n\t<database>Unknown</database>\n</source>\n"
         xml = xml + "<size>\n"
         xml = xml + "\t<width>" + str(width) + "</width>\n"
@@ -129,8 +129,10 @@ def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out
         xml = xml + "<segmented>Unspecified</segmented>\n"
 
         for bbx in data['annotation']:
+
             if not bbx:
                 continue;
+
             # Pascal VOC only supports rectangles.
             if "shape" in bbx and bbx["shape"] != "rectangle":
                 continue;
@@ -141,17 +143,30 @@ def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out
                 bbx_labels = [bbx_labels]
 
             for bbx_label in bbx_labels:
+
                 xml = xml + get_xml_for_bbx(bbx_label, bbx, width, height)
 
-                txt_file_name = bbx_label + '_' + dataset_split
-                txt_file_path = os.path.join(txt_out_dir, txt_file_name + ".txt")
-                with open(txt_file_path, 'a+') as f:
-                    f.write(str(dataset_txt_file_name) + '\n')
+                # Store labeled image name and count against label in dict - to be stored to file later
+                if bbx_label not in  img_object_count:
+                    img_object_count[bbx_label] = {}
+
+                images = img_object_count[bbx_label]
+                found_img_name=False
+                if images:
+                    for temp_image_name, count in images.items():
+                        if temp_image_name == image_file_name_without_ext:
+                            count = count + 1
+                            images[temp_image_name] = count
+                            found_img_name=True
+                            break
+
+                if not found_img_name:
+                    images[image_file_name_without_ext] = 1
 
         xml = xml + "</annotation>"
 
         # output to a file.
-        xml_file_path = os.path.join(xml_out_dir, file_name + ".xml")
+        xml_file_path = os.path.join(xml_out_dir, image_file_name + ".xml")
         with open(xml_file_path, 'w') as f:
             f.write(xml)
 
@@ -197,10 +212,18 @@ def main():
             "Please specify a valid path to dataturks JSON output file, " + dataturks_JSON_FilePath + " is empty")
         return
 
+    global dataset_split_txt_file__path
+    dataset_split_txt_file__path = os.path.join(pascal_voc_txt_dir, dataset_split + ".txt")
+    # Flush the file content, if it already exists
+    with open(dataset_split_txt_file__path, 'w+') as f:
+        f.write('')
+
     count = 0;
     success = 0
+    global img_object_count
+    img_object_count = {}
     for line in lines:
-        status = convert_to_pascalvoc(line, image_download_dir, pascal_voc_xml_dir, pascal_voc_txt_dir, dataset_split)
+        status = convert_to_pascalvoc(line, image_download_dir, pascal_voc_xml_dir, pascal_voc_txt_dir)
 
         if status:
             success = success + 1
@@ -209,15 +232,25 @@ def main():
         if count % 10 == 0:
             logging.info(str(count) + " items done ...")
 
+    for label, label_details in img_object_count.items():
+
+        label_txt_file_name = label + '_' + dataset_split
+        label_txt_file_path = os.path.join(pascal_voc_txt_dir, label_txt_file_name + ".txt")
+
+        with open(label_txt_file_path, 'w+') as f:
+            for image_name, count in label_details.items():
+                f.write(image_name + ' ' + str(count) + '\n')
+
     logging.info("Completed: " + str(success) + " items done, " + str(len(lines) - success)
                  + " items ignored due to errors or for being skipped items.")
 
 
 def create_arg_parser():
-    """"Creates and returns the ArgumentParser object."""
 
+    """"Creates and returns the ArgumentParser object."""
     parser = argparse.ArgumentParser(
         description='Converts Dataturks output JSON file for Image bounding box to Pascal VOC format.')
+
     parser.add_argument('dataturks_JSON_FilePath',
                         help='Path to the JSON file downloaded from Dataturks.')
     parser.add_argument('image_download_dir',
@@ -233,13 +266,15 @@ def create_arg_parser():
 
 
 if __name__ == '__main__':
-    arg_parser = create_arg_parser()
-    parsed_args = arg_parser.parse_args(sys.argv[1:])
+
     global dataturks_JSON_FilePath
     global image_download_dir
     global pascal_voc_xml_dir
     global pascal_voc_txt_dir
     global dataset_split
+
+    arg_parser = create_arg_parser()
+    parsed_args = arg_parser.parse_args(sys.argv[1:])
 
     # setup global values.
     dataturks_JSON_FilePath = parsed_args.dataturks_JSON_FilePath
