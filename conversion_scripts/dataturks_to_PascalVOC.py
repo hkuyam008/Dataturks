@@ -65,6 +65,11 @@ def get_xml_for_bbx(bbx_label, bbx_data, width, height):
         xmax = int(bbx_data['points'][1]['x']*width)
         ymax = int(bbx_data['points'][1]['y']*height)
 
+    xmin = int(round(xmin))
+    ymin = int(round(ymin))
+    xmax = int(round(xmax))
+    ymax = int(round(ymax))
+
     xml = "<object>\n"
     xml = xml + "\t<name>" + bbx_label + "</name>\n"
     xml = xml + "\t<pose>Unspecified</pose>\n"
@@ -124,7 +129,7 @@ def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out
         xml = xml + "<size>\n"
         xml = xml + "\t<width>" + str(width) + "</width>\n"
         xml = xml + "\t<height>" + str(height) + "</height>\n"
-        xml = xml + "\t<depth>Unspecified</depth>\n"
+        xml = xml + "\t<depth>3</depth>\n"
         xml = xml + "</size>\n"
         xml = xml + "<segmented>Unspecified</segmented>\n"
 
@@ -166,6 +171,7 @@ def convert_to_pascalvoc(dataturks_labeled_item, image_dir, xml_out_dir, txt_out
         xml = xml + "</annotation>"
 
         # output to a file.
+        image_file_name = image_file_name.split(".")[0] # strip the extension
         xml_file_path = os.path.join(xml_out_dir, image_file_name + ".xml")
         with open(xml_file_path, 'w') as f:
             f.write(xml)
